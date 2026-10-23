@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Kartičky">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Kartičky</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#/" class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Kartičky
+    </a>
+    <a href="#/add" class="btn btn-primary btn-sm">+ Nová karta</a>
+  </header>
+
+  <main id="app" class="container"></main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <div id="lightbox" class="lightbox" hidden>
+    <img alt="Zvětšený obrázek">
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/scheduler.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/images.js"></script>
+  <script src="js/reminders.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
