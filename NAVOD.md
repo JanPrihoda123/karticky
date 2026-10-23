@@ -11,6 +11,10 @@ Celé nastavení má tři části: **GitHub Pages** (kde aplikace běží), **Cl
 
 ## 2. Cloudflare Worker (server pro notifikace)
 
+Server už běží na `https://karticky-push.articky.workers.dev`. Je nasazený přes `wrangler` podle souboru `wrangler.toml`. Po změně v `worker/push-worker.js` ho znovu nasadíte příkazem `npx wrangler deploy`.
+
+Ruční postup přes web Cloudflare (pro případ, že byste server zakládal znovu bez wrangleru):
+
 1. Zaregistrujte se na <https://dash.cloudflare.com/sign-up>.
 2. **Workers & Pages → Create → Create Worker** (šablona *Hello World*), pojmenujte ho `karticky-push` a klikněte **Deploy**.
 3. Klikněte **Edit code**, smažte vzorový kód, vložte celý obsah souboru `worker/push-worker.js` a klikněte **Deploy**.

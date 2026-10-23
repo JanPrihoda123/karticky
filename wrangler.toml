@@ -1,0 +1,14 @@
+name = "karticky-push"
+main = "worker/push-worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGIN = "https://janprihoda123.github.io"
+
+[[kv_namespaces]]
+binding = "SUBS"
+id = "d7daa27650fa4b6c93d26d3758fcaa9a"
+
+[triggers]
+crons = ["*/15 * * * *"]
