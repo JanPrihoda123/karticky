@@ -20,9 +20,16 @@ A static web app with no build step and no server:
 
 ## Data schema
 
+Two IndexedDB stores (schema version 2). Upgrading from version 1 moves existing cards into a default deck, "Moje kartičky".
+
 ```js
+// decks
+{ id: string, name: string, color: number, createdAt: ISO timestamp }
+
+// cards
 {
   id: string,
+  deckId: string,
   front: Blob,               // question photo
   back: Blob,                // answer photo
   box: 1..6,

@@ -1,7 +1,7 @@
 /* Service worker: offline app shell + daily review push notifications. */
 importScripts('js/scheduler.js', 'js/db.js');
 
-const CACHE = 'karticky-v1';
+const CACHE = 'karticky-v2';
 const SHELL = [
   './',
   'index.html',
@@ -58,8 +58,18 @@ function plural(n, one, few, many) {
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     let due = 0;
+    let breakdown = '';
     try {
-      due = (await DB.all()).filter((c) => Leitner.isDue(c)).length;
+      const [cards, decks] = await Promise.all([DB.all(), DB.decks()]);
+      const perDeck = {};
+      for (const c of cards) {
+        if (!Leitner.isDue(c)) continue;
+        due++;
+        perDeck[c.deckId] = (perDeck[c.deckId] || 0) + 1;
+      }
+      // With more than one set due, say how the cards split, e.g. "(Angličtina 5, Matematika 3)".
+      const parts = decks.filter((d) => perDeck[d.id]).map((d) => `${d.name} ${perDeck[d.id]}`);
+      if (parts.length > 1) breakdown = ` (${parts.join(', ')})`;
     } catch { /* fall through to the generic message */ }
 
     if (self.navigator.setAppBadge) {
@@ -70,7 +80,7 @@ self.addEventListener('push', (event) => {
     }
 
     const body = due
-      ? `Dnes máte ${due} ${plural(due, 'kartu', 'karty', 'karet')} k opakování.`
+      ? `Dnes máte ${due} ${plural(due, 'kartu', 'karty', 'karet')} k opakování${breakdown}.`
       : 'Je čas na opakování kartiček.';
     await self.registration.showNotification('Kartičky', {
       body,
