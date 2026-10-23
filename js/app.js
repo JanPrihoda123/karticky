@@ -11,6 +11,7 @@
   const BOX_LABELS = { 1: 'Nové', 2: 'Po 1 dni', 3: 'Po 5 dnech', 4: 'Po 7 dnech', 5: 'Po 14 dnech', 6: 'Naučené' };
   const DECK_COLORS = ['#6366f1', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#ec4899'];
   const LAST_DECK_KEY = 'karticky-last-deck';
+  const ADD_MODE_KEY = 'karticky-add-mode';
 
   const ICON_PATHS = {
     check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
@@ -20,6 +21,7 @@
     camera: '<path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.8l1.4-2h6.6l1.4 2h1.8A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.5"/>',
     zoom: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2M11 8.5v5M8.5 11h5"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9 7V4h6v3"/>',
+    text: '<path d="M5 7V5h14v2M12 5v14M9 19h6"/>',
   };
 
   function icon(name) {
@@ -82,6 +84,19 @@
     try { return localStorage.getItem(LAST_DECK_KEY); } catch { return null; }
   }
 
+  // Photo or text per side, remembered so typing a batch of cards stays quick.
+  function addModes() {
+    try {
+      return { front: 'photo', back: 'photo', ...JSON.parse(localStorage.getItem(ADD_MODE_KEY)) };
+    } catch {
+      return { front: 'photo', back: 'photo' };
+    }
+  }
+
+  function saveAddModes(modes) {
+    try { localStorage.setItem(ADD_MODE_KEY, JSON.stringify(modes)); } catch { /* private mode */ }
+  }
+
   // ---- Object URLs, keyboard shortcuts, toast, lightbox ----
 
   let objectUrls = [];
@@ -122,24 +137,45 @@
 
   // ---- Shared card components ----
 
+  function textSize(text) {
+    if (text.length <= 24) return 'text-lg';
+    if (text.length <= 120) return 'text-md';
+    return 'text-sm';
+  }
+
+  function faceHtml(card, side) {
+    const label = side === 'front' ? 'Otázka' : 'Odpověď';
+    const text = card[`${side}Text`];
+    if (text) {
+      return `
+        <div class="face face-${side}">
+          <p class="face-text ${textSize(text)}">${esc(text)}</p>
+          <span class="face-tag">${label}</span>
+        </div>`;
+    }
+    const src = blobUrl(card[side]);
+    return `
+      <div class="face face-${side}">
+        <img src="${src}" alt="${label}">
+        <span class="face-tag">${label}</span>
+        <button class="zoom" data-src="${src}" aria-label="Zvětšit">${icon('zoom')}</button>
+      </div>`;
+  }
+
   function flipCardHtml(card) {
-    const front = blobUrl(card.front);
-    const back = blobUrl(card.back);
     return `
       <div class="flip" role="button" tabindex="0" aria-label="Otočit kartu">
         <div class="flip-inner">
-          <div class="face face-front">
-            <img src="${front}" alt="Přední strana">
-            <span class="face-tag">Otázka</span>
-            <button class="zoom" data-src="${front}" aria-label="Zvětšit">${icon('zoom')}</button>
-          </div>
-          <div class="face face-back">
-            <img src="${back}" alt="Zadní strana">
-            <span class="face-tag">Odpověď</span>
-            <button class="zoom" data-src="${back}" aria-label="Zvětšit">${icon('zoom')}</button>
-          </div>
+          ${faceHtml(card, 'front')}
+          ${faceHtml(card, 'back')}
         </div>
       </div>`;
+  }
+
+  function thumbHtml(card) {
+    return card.frontText
+      ? `<span class="thumb-text">${esc(card.frontText)}</span>`
+      : `<img src="${blobUrl(card.front)}" alt="" loading="lazy">`;
   }
 
   // Wires up flipping; onReveal runs the first time the back is shown.
@@ -463,15 +499,25 @@
 
     const preferred = [deckId, lastDeck()].find((id) => decks.some((d) => d.id === id)) || decks[0].id;
     const picked = { front: null, back: null };
+    const modes = addModes();
 
-    const picker = (side, title, sub) => `
-      <label class="picker" data-side="${side}">
-        <input type="file" accept="image/*" hidden>
-        <div class="picker-preview">
-          <span class="picker-empty">${icon('camera')}<strong>${title}</strong><small>${sub}</small></span>
+    const sideEditor = (side, title, sub) => `
+      <div class="side-editor" data-side="${side}" data-mode="${modes[side]}">
+        <div class="side-head">
+          <span class="side-title">${title}</span>
+          <div class="segmented" role="group" aria-label="${title}: fotka nebo text">
+            <button type="button" data-mode="photo">${icon('camera')}Fotka</button>
+            <button type="button" data-mode="text">${icon('text')}Text</button>
+          </div>
         </div>
-        <span class="picker-caption">${title}</span>
-      </label>`;
+        <label class="picker">
+          <input type="file" accept="image/*" hidden>
+          <div class="picker-preview">
+            <span class="picker-empty">${icon('camera')}<strong>Vyfotit nebo vybrat</strong><small>${sub}</small></span>
+          </div>
+        </label>
+        <textarea class="side-text" maxlength="500" placeholder="${sub}…" aria-label="${title}: ${sub}"></textarea>
+      </div>`;
 
     app.innerHTML = `
       <div class="page-head">
@@ -485,13 +531,27 @@
         </select>
       </label>
       <div class="add-grid">
-        ${picker('front', 'Přední strana', 'Otázka')}
-        ${picker('back', 'Zadní strana', 'Odpověď')}
+        ${sideEditor('front', 'Přední strana', 'Otázka')}
+        ${sideEditor('back', 'Zadní strana', 'Odpověď')}
       </div>
       <button id="save" class="btn btn-primary btn-lg btn-block" disabled>Uložit do Boxu 1</button>`;
 
     const saveBtn = document.getElementById('save');
     const deckSelect = document.getElementById('deck');
+    const editor = (side) => app.querySelector(`.side-editor[data-side="${side}"]`);
+
+    // { blob, text } for a side, using whichever mode is currently selected.
+    function sideContent(side) {
+      const ed = editor(side);
+      return ed.dataset.mode === 'text'
+        ? { blob: null, text: ed.querySelector('textarea').value.trim() || null }
+        : { blob: picked[side], text: null };
+    }
+
+    function updateSave() {
+      const filled = (s) => { const c = sideContent(s); return Boolean(c.blob || c.text); };
+      saveBtn.disabled = !(filled('front') && filled('back'));
+    }
 
     deckSelect.addEventListener('change', () => {
       rememberDeck(deckSelect.value);
@@ -499,8 +559,23 @@
       addLink.href = `#/add/${deckSelect.value}`;
     });
 
-    app.querySelectorAll('.picker').forEach((label) => {
-      const side = label.dataset.side;
+    app.querySelectorAll('.side-editor').forEach((ed) => {
+      const side = ed.dataset.side;
+      const label = ed.querySelector('.picker');
+      const textarea = ed.querySelector('textarea');
+
+      ed.querySelectorAll('.segmented button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          ed.dataset.mode = btn.dataset.mode;
+          modes[side] = btn.dataset.mode;
+          saveAddModes(modes);
+          if (btn.dataset.mode === 'text') textarea.focus();
+          updateSave();
+        });
+      });
+
+      textarea.addEventListener('input', updateSave);
+
       label.querySelector('input').addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -512,21 +587,29 @@
         }
         label.querySelector('.picker-preview').innerHTML = `<img src="${blobUrl(picked[side])}" alt="">`;
         label.classList.add('has-image');
-        saveBtn.disabled = !(picked.front && picked.back);
+        updateSave();
       });
     });
 
     saveBtn.addEventListener('click', async () => {
       saveBtn.disabled = true;
       const chosen = deckSelect.value;
-      await DB.put({ ...createCard(newId(), picked.front, picked.back), deckId: chosen });
+      const front = sideContent('front');
+      const back = sideContent('back');
+      await DB.put({
+        ...createCard(newId(), { front: front.blob, frontText: front.text, back: back.blob, backText: back.text }),
+        deckId: chosen,
+      });
       rememberDeck(chosen);
       // Ask the browser not to evict our data under storage pressure.
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
       const deckName = decks.find((d) => d.id === chosen).name;
       toast(`Karta přidána do sady ${deckName}`);
       releaseUrls();
-      renderAdd(chosen);
+      await renderAdd(chosen);
+      // Ready for the next typed card straight away.
+      const firstText = app.querySelector('.side-editor[data-side="front"][data-mode="text"] textarea');
+      if (firstText) firstText.focus();
     });
   }
 
@@ -649,7 +732,7 @@
         <div class="thumb-grid">
           ${cards.map((c) => `
             <a class="thumb" href="#/card/${c.id}">
-              <img src="${blobUrl(c.front)}" alt="" loading="lazy">
+              ${thumbHtml(c)}
               <span class="thumb-meta ${isDue(c) ? 'due' : ''}">${dueText(c)}</span>
             </a>`).join('')}
         </div>` : '<p class="empty muted">V tomto boxu nejsou žádné karty.</p>'}`;
@@ -730,8 +813,8 @@
     const [decks, cards] = await Promise.all([DB.decks(), DB.all()]);
     const serialized = await Promise.all(cards.map(async (c) => ({
       ...c,
-      front: await Img.toDataURL(c.front),
-      back: await Img.toDataURL(c.back),
+      front: c.front ? await Img.toDataURL(c.front) : null,
+      back: c.back ? await Img.toDataURL(c.back) : null,
     })));
     const json = JSON.stringify({ app: 'karticky', version: 2, exportedAt: new Date().toISOString(), decks, cards: serialized });
     const a = document.createElement('a');
@@ -765,7 +848,12 @@
         deckId = DB.DEFAULT_DECK.id;
         needsDefault = !known.has(deckId);
       }
-      return { ...c, deckId, front: Img.fromDataURL(c.front), back: Img.fromDataURL(c.back) };
+      return {
+        ...c,
+        deckId,
+        front: c.front ? Img.fromDataURL(c.front) : null,
+        back: c.back ? Img.fromDataURL(c.back) : null,
+      };
     });
     if (needsDefault) decks.push({ ...DB.DEFAULT_DECK, createdAt: new Date().toISOString() });
 

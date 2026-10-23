@@ -1,8 +1,9 @@
 /*
  * Leitner scheduling — pure functions, no DOM or storage access.
  *
- * Card shape:
- *   { id, front: Blob, back: Blob, box: 1..6, createdAt: ISO,
+ * Card shape (each side is either a photo Blob or text; the other field is null):
+ *   { id, deckId, front: Blob | null, frontText: string | null,
+ *     back: Blob | null, backText: string | null, box: 1..6, createdAt: ISO,
  *     lastReviewedAt: ISO | null, nextReviewDate: "YYYY-MM-DD" | null,
  *     reviews: number, lapses: number }
  */
@@ -42,11 +43,14 @@
     return Math.round((parseDay(toKey) - parseDay(fromKey)) / 86400000);
   }
 
-  function createCard(id, front, back, now = new Date()) {
+  // content: { front, frontText, back, backText }
+  function createCard(id, content, now = new Date()) {
     return {
       id,
-      front,
-      back,
+      front: content.front || null,
+      frontText: content.frontText || null,
+      back: content.back || null,
+      backText: content.backText || null,
       box: 1,
       createdAt: now.toISOString(),
       lastReviewedAt: null,

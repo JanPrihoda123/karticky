@@ -1,6 +1,6 @@
 # Kartičky
 
-Flashcard review app using the Leitner box system. Each card is a photo of a question (front) and a photo of the answer (back).
+Flashcard review app using the Leitner box system. Cards are grouped into decks; each side of a card is either a photo or typed text.
 
 ## Architecture
 
@@ -30,8 +30,10 @@ Two IndexedDB stores (schema version 2). Upgrading from version 1 moves existing
 {
   id: string,
   deckId: string,
-  front: Blob,               // question photo
-  back: Blob,                // answer photo
+  front: Blob | null,        // question photo, or
+  frontText: string | null,  // typed question
+  back: Blob | null,         // answer photo, or
+  backText: string | null,   // typed answer
   box: 1..6,
   createdAt: ISO timestamp,
   lastReviewedAt: ISO timestamp | null,
