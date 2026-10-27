@@ -22,6 +22,8 @@
     zoom: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2M11 8.5v5M8.5 11h5"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9 7V4h6v3"/>',
     text: '<path d="M5 7V5h14v2M12 5v14M9 19h6"/>',
+    shuffle: '<path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>',
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   };
 
   function icon(name) {
@@ -135,6 +137,11 @@
   }
   lightbox.addEventListener('click', closeLightbox);
 
+  // Surface unexpected errors so they can be reported instead of failing silently.
+  const showError = (msg) => toast(`Chyba: ${msg}`);
+  window.addEventListener('error', (e) => showError(e.message));
+  window.addEventListener('unhandledrejection', (e) => showError((e.reason && e.reason.message) || e.reason));
+
   // ---- Shared card components ----
 
   function textSize(text) {
@@ -222,10 +229,28 @@
     return `Umím → ${when} · Neumím → Box 1${box === 1 ? ' (ještě dnes)' : ''}`;
   }
 
+  // Accepts one answer per card: a quick double tap must not also grade the next card.
+  // Returns the answer function so keyboard shortcuts go through the same guard.
   function bindDecision(container, decide) {
+    let answered = false;
+    const answer = (pass) => {
+      if (answered) return;
+      answered = true;
+      container.querySelectorAll('[data-act]').forEach((b) => { b.disabled = true; });
+      decide(pass);
+    };
     container.querySelectorAll('[data-act]').forEach((btn) => {
-      btn.addEventListener('click', () => decide(btn.dataset.act === 'pass'));
+      btn.addEventListener('click', () => answer(btn.dataset.act === 'pass'));
     });
+    return answer;
+  }
+
+  function shuffle(list) {
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
   }
 
   function boxGridHtml(deckId, boxes) {
@@ -484,7 +509,18 @@
     }
   }
 
-  async function renderAdd(deckId) {
+  async function renderEdit(id) {
+    const card = await DB.get(id);
+    if (!card) {
+      app.innerHTML = `<p class="empty muted">Karta nenalezena. <a href="#/">Zpět na přehled</a></p>`;
+      return;
+    }
+    await renderCardForm({ card });
+  }
+
+  // Shared form for adding a new card (opts.deckId) or editing one (opts.card).
+  async function renderCardForm({ deckId, card }) {
+    const isEdit = Boolean(card);
     const decks = await sortedDecks();
     if (!decks.length) {
       app.innerHTML = `
@@ -497,9 +533,17 @@
       return;
     }
 
-    const preferred = [deckId, lastDeck()].find((id) => decks.some((d) => d.id === id)) || decks[0].id;
-    const picked = { front: null, back: null };
-    const modes = addModes();
+    const preferred = [isEdit ? card.deckId : deckId, lastDeck()]
+      .find((id) => decks.some((d) => d.id === id)) || decks[0].id;
+    const picked = { front: isEdit ? card.front : null, back: isEdit ? card.back : null };
+    const modes = isEdit
+      ? { front: card.frontText ? 'text' : 'photo', back: card.backText ? 'text' : 'photo' }
+      : addModes();
+    const backHref = isEdit ? `#/card/${card.id}` : `#/deck/${preferred}`;
+
+    const preview = (side, sub) => (picked[side]
+      ? `<img src="${blobUrl(picked[side])}" alt="">`
+      : `<span class="picker-empty">${icon('camera')}<strong>Vyfotit nebo vybrat</strong><small>${sub}</small></span>`);
 
     const sideEditor = (side, title, sub) => `
       <div class="side-editor" data-side="${side}" data-mode="${modes[side]}">
@@ -510,19 +554,17 @@
             <button type="button" data-mode="text">${icon('text')}Text</button>
           </div>
         </div>
-        <label class="picker">
+        <label class="picker ${picked[side] ? 'has-image' : ''}">
           <input type="file" accept="image/*" hidden>
-          <div class="picker-preview">
-            <span class="picker-empty">${icon('camera')}<strong>Vyfotit nebo vybrat</strong><small>${sub}</small></span>
-          </div>
+          <div class="picker-preview">${preview(side, sub)}</div>
         </label>
-        <textarea class="side-text" maxlength="500" placeholder="${sub}…" aria-label="${title}: ${sub}"></textarea>
+        <textarea class="side-text" maxlength="500" placeholder="${sub}…" aria-label="${title}: ${sub}">${isEdit ? esc(card[`${side}Text`] || '') : ''}</textarea>
       </div>`;
 
     app.innerHTML = `
       <div class="page-head">
-        <a href="#/deck/${preferred}" class="link-back" id="add-back">${icon('back')}Zpět</a>
-        <h1>Nová karta</h1>
+        <a href="${backHref}" class="link-back" id="add-back">${icon('back')}Zpět</a>
+        <h1>${isEdit ? 'Upravit kartu' : 'Nová karta'}</h1>
       </div>
       <label class="field">
         <span>Sada</span>
@@ -534,7 +576,8 @@
         ${sideEditor('front', 'Přední strana', 'Otázka')}
         ${sideEditor('back', 'Zadní strana', 'Odpověď')}
       </div>
-      <button id="save" class="btn btn-primary btn-lg btn-block" disabled>Uložit do Boxu 1</button>`;
+      <button id="save" class="btn btn-primary btn-lg btn-block" disabled>${isEdit ? 'Uložit změny' : 'Uložit do Boxu 1'}</button>
+      ${isEdit ? '<p class="muted small center">Karta zůstane ve svém boxu a s naplánovaným opakováním.</p>' : ''}`;
 
     const saveBtn = document.getElementById('save');
     const deckSelect = document.getElementById('deck');
@@ -554,6 +597,7 @@
     }
 
     deckSelect.addEventListener('change', () => {
+      if (isEdit) return;
       rememberDeck(deckSelect.value);
       document.getElementById('add-back').href = `#/deck/${deckSelect.value}`;
       addLink.href = `#/add/${deckSelect.value}`;
@@ -568,7 +612,7 @@
         btn.addEventListener('click', () => {
           ed.dataset.mode = btn.dataset.mode;
           modes[side] = btn.dataset.mode;
-          saveAddModes(modes);
+          if (!isEdit) saveAddModes(modes);
           if (btn.dataset.mode === 'text') textarea.focus();
           updateSave();
         });
@@ -591,11 +635,28 @@
       });
     });
 
+    updateSave();
+
     saveBtn.addEventListener('click', async () => {
       saveBtn.disabled = true;
       const chosen = deckSelect.value;
       const front = sideContent('front');
       const back = sideContent('back');
+
+      if (isEdit) {
+        await DB.put({
+          ...card,
+          deckId: chosen,
+          front: front.blob,
+          frontText: front.text,
+          back: back.blob,
+          backText: back.text,
+        });
+        toast('Karta upravena');
+        location.hash = `#/card/${card.id}`;
+        return;
+      }
+
       await DB.put({
         ...createCard(newId(), { front: front.blob, frontText: front.text, back: back.blob, backText: back.text }),
         deckId: chosen,
@@ -606,7 +667,7 @@
       const deckName = decks.find((d) => d.id === chosen).name;
       toast(`Karta přidána do sady ${deckName}`);
       releaseUrls();
-      await renderAdd(chosen);
+      await renderCardForm({ deckId: chosen });
       // Ready for the next typed card straight away.
       const firstText = app.querySelector('.side-editor[data-side="front"][data-mode="text"] textarea');
       if (firstText) firstText.focus();
@@ -657,9 +718,12 @@
         <div class="review-head">
           <a href="${exit}" class="link-back">${icon('back')}Konec</a>
           <span class="pill box-${card.box}">Box ${card.box}</span>
+          <button class="btn btn-ghost btn-sm" id="shuffle" ${queue.length < 2 ? 'disabled' : ''}>${icon('shuffle')}<span>Zamíchat</span></button>
+        </div>
+        <div class="progress-row">
+          <div class="progress"><div style="width:${pct}%"></div></div>
           <span class="muted small">Zbývá ${queue.length}</span>
         </div>
-        <div class="progress"><div style="width:${pct}%"></div></div>
         ${!deckId && deck ? `<p class="review-deck" style="--c:${deckColor(deck)}"><span class="dot"></span>${esc(deck.name)}</p>` : ''}
         ${flipCardHtml(card)}
         <div class="decision">
@@ -667,31 +731,46 @@
         </div>`;
 
       const decision = app.querySelector('.decision');
-      let revealed = false;
+      let answer = null;
+
+      document.getElementById('shuffle').addEventListener('click', () => {
+        shuffle(queue);
+        toast('Zamícháno');
+        show();
+      });
 
       async function decide(pass) {
-        const updated = evaluate(queue.shift(), pass);
-        await DB.put(updated);
+        // Remove this exact card, wherever it is now (the queue may have been shuffled).
+        const idx = queue.indexOf(card);
+        if (idx === -1) return;
+        const updated = evaluate(card, pass);
+        try {
+          await DB.put(updated);
+        } catch (err) {
+          showError(err.message || err);
+          show();
+          return;
+        }
+        queue.splice(idx, 1);
         done++;
         if (pass) passed++; else failed++;
-        // Failed box-1 cards are due again today, so they come back at the end.
+        // Failed cards are due again today, so they come back at the end.
         if (isDue(updated)) queue.push(updated);
         show();
       }
 
       const toggle = mountFlip(() => {
-        revealed = true;
         decision.innerHTML = `
           <div class="decision-buttons">${decisionButtons(card.box)}</div>
           <p class="muted small center">${outcomeHint(card.box)}</p>`;
-        bindDecision(decision, decide);
+        answer = bindDecision(decision, decide);
       });
 
       keyHandler = (e) => {
         if (e.key === ' ') { e.preventDefault(); toggle(); return; }
-        if (!revealed) return;
-        if (e.key === 'ArrowLeft' || e.key === '1') decide(false);
-        if ((e.key === 'ArrowRight' || e.key === '2') && card.box !== MASTERED_BOX) decide(true);
+        if (!answer) return;
+        if (e.key === 'ArrowLeft' || e.key === '1') answer(false);
+        if ((e.key === 'ArrowRight' || e.key === '2') && card.box !== MASTERED_BOX) answer(true);
       };
     }
 
@@ -744,7 +823,7 @@
       app.innerHTML = `<p class="empty muted">Karta nenalezena. <a href="#/">Zpět na přehled</a></p>`;
       return;
     }
-    const [decks, siblings] = await Promise.all([sortedDecks(), boxCards(card.deckId, card.box)]);
+    const siblings = await boxCards(card.deckId, card.box);
     const idx = siblings.findIndex((c) => c.id === id);
     const next = siblings[idx + 1];
     const canDecide = card.box === MASTERED_BOX || isDue(card);
@@ -767,13 +846,10 @@
         <div><dt>Vytvořeno</dt><dd>${formatDate(card.createdAt)}</dd></div>
         <div><dt>Opakování / chyby</dt><dd>${card.reviews || 0} / ${card.lapses || 0}</dd></div>
       </dl>
-      <label class="field">
-        <span>Sada</span>
-        <select id="move-deck">
-          ${decks.map((d) => `<option value="${d.id}" ${d.id === card.deckId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
-        </select>
-      </label>
-      <button class="btn btn-ghost btn-danger btn-sm" id="delete">${icon('trash')}<span>Smazat kartu</span></button>`;
+      <div class="card-actions">
+        <a class="btn btn-ghost" href="#/card/${card.id}/edit">${icon('edit')}<span>Upravit kartu</span></a>
+        <button class="btn btn-ghost btn-danger" id="delete">${icon('trash')}<span>Smazat</span></button>
+      </div>`;
 
     const decision = app.querySelector('.decision');
 
@@ -791,13 +867,6 @@
     keyHandler = (e) => {
       if (e.key === ' ') { e.preventDefault(); toggle(); }
     };
-
-    document.getElementById('move-deck').addEventListener('change', async (e) => {
-      const target = decks.find((d) => d.id === e.target.value);
-      await DB.put({ ...card, deckId: target.id });
-      toast(`Karta přesunuta do sady ${target.name}`);
-      router();
-    });
 
     document.getElementById('delete').addEventListener('click', async () => {
       if (!confirm('Opravdu smazat tuto kartu? Tuto akci nelze vrátit.')) return;
@@ -871,8 +940,9 @@
     [new RegExp(`^#/deck/${ID}$`), (m) => renderDeck(m[1])],
     [new RegExp(`^#/deck/${ID}/review$`), (m) => renderReview(m[1])],
     [new RegExp(`^#/deck/${ID}/box/([1-6])$`), (m) => renderBox(m[1], Number(m[2]))],
-    [new RegExp(`^#/add(?:/${ID})?$`), (m) => renderAdd(m[1])],
+    [new RegExp(`^#/add(?:/${ID})?$`), (m) => renderCardForm({ deckId: m[1] })],
     [new RegExp(`^#/card/${ID}$`), (m) => renderCard(m[1])],
+    [new RegExp(`^#/card/${ID}/edit$`), (m) => renderEdit(m[1])],
   ];
 
   async function router() {

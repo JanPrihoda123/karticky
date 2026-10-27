@@ -45,7 +45,9 @@
 
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
-    navigator.serviceWorker.register('sw.js').catch((err) => console.warn('SW registration failed', err));
+    // updateViaCache: 'none' so a new sw.js is picked up on the next launch, not hours later.
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .catch((err) => console.warn('SW registration failed', err));
   }
 
   function base64UrlToBytes(b64url) {

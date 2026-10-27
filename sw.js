@@ -1,7 +1,7 @@
 /* Service worker: offline app shell + daily review push notifications. */
 importScripts('js/scheduler.js', 'js/db.js');
 
-const CACHE = 'karticky-v2';
+const CACHE = 'karticky-v3';
 const SHELL = [
   './',
   'index.html',
@@ -30,12 +30,13 @@ self.addEventListener('activate', (event) => {
 });
 
 // Network first so updates show up immediately; cache is the offline fallback.
+// `no-cache` makes the browser revalidate instead of reusing a stale HTTP-cached copy.
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   event.respondWith((async () => {
     try {
-      const res = await fetch(req);
+      const res = await fetch(req, { cache: 'no-cache' });
       if (res.ok) {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy));

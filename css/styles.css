@@ -421,6 +421,11 @@ h2 { font-size: 1.125rem; }
   font-weight: 700;
 }
 
+.progress-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.progress-row .progress { flex: 1; margin: 0; }
+
+.card-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
 .progress {
   height: 6px;
   margin-bottom: 14px;
