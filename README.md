@@ -52,11 +52,14 @@ Two IndexedDB stores (schema version 2). Upgrading from version 1 moves existing
 | 3 | 5 days | → Box 4 | → Box 1 |
 | 4 | 7 days | → Box 5 | → Box 1 |
 | 5 | 14 days | → Box 6 | → Box 1 |
-| 6 (Naučené) | never scheduled | — | → Box 1 (only action) |
+| 6 (Naučené) | never scheduled | stays in Box 6 | → Box 1 |
 
 Due dates are local calendar days, so anything due "today" can be reviewed at any time that day. Cards failed during a session come back at the end of the same session.
 
-Box 6 cards never show up in daily review. To check them, open **Naučené** on the dashboard, tap a card to flip it, and press ✗ if you've forgotten it.
+- **Order:** daily review goes from the highest box down (5 → 1). A shuffle button reorders the rest of the session.
+- **Missed reviews:** a card in Box 2–5 that isn't reviewed on its due day drops back to Box 1 the next time the app opens.
+- **Box 6:** never in daily review. **Opakovat naučené** (on the deck page or in Box 6) reviews only the mastered cards, whenever you want.
+- **Direction:** each deck can show the question first (default) or the answer first (`deck.reverse`).
 
 ## Running
 

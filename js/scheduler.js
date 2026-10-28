@@ -60,13 +60,10 @@
     };
   }
 
-  // Pass moves the card up one box; fail always sends it back to box 1,
-  // where it is due again the same day.
+  // Pass moves the card up one box (a mastered card stays mastered); fail always
+  // sends it back to box 1, where it is due again the same day.
   function evaluate(card, passed, now = new Date()) {
-    if (passed && card.box === MASTERED_BOX) {
-      throw new Error('Mastered cards can only be reset.');
-    }
-    const box = passed ? card.box + 1 : 1;
+    const box = passed ? Math.min(card.box + 1, MASTERED_BOX) : 1;
     const interval = BOX_INTERVAL_DAYS[box];
     return {
       ...card,
@@ -84,12 +81,21 @@
       && card.nextReviewDate <= dayKey(now);
   }
 
-  // Earliest due first, then lower box, then oldest card.
+  // A card in box 2–5 that wasn't reviewed on its due day falls back to box 1
+  // (due today). Returns the updated card, or null if nothing changes.
+  function settleOverdue(card, now = new Date()) {
+    if (card.box <= 1 || card.box >= MASTERED_BOX || !card.nextReviewDate) return null;
+    const today = dayKey(now);
+    if (card.nextReviewDate >= today) return null;
+    return { ...card, box: 1, nextReviewDate: today, lapses: (card.lapses || 0) + 1 };
+  }
+
+  // Review order: highest box first (5 → 1), then earliest due, then oldest card.
   function compareCards(a, b) {
+    if (a.box !== b.box) return b.box - a.box;
     const ad = a.nextReviewDate || '9999-12-31';
     const bd = b.nextReviewDate || '9999-12-31';
     if (ad !== bd) return ad < bd ? -1 : 1;
-    if (a.box !== b.box) return a.box - b.box;
     return a.createdAt < b.createdAt ? -1 : 1;
   }
 
@@ -103,6 +109,7 @@
     createCard,
     evaluate,
     isDue,
+    settleOverdue,
     compareCards,
   };
 })(self); // `self` so the service worker can importScripts() this file too

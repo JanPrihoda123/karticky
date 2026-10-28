@@ -376,7 +376,8 @@ h2 { font-size: 1.125rem; }
 }
 .segmented .icon { width: 1.1em; height: 1.1em; }
 .side-editor[data-mode="photo"] .segmented [data-mode="photo"],
-.side-editor[data-mode="text"] .segmented [data-mode="text"] {
+.side-editor[data-mode="text"] .segmented [data-mode="text"],
+.segmented [aria-pressed="true"] {
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
@@ -425,6 +426,11 @@ h2 { font-size: 1.125rem; }
 .progress-row .progress { flex: 1; margin: 0; }
 
 .card-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.direction-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; }
+
+.mastered-btn { margin-top: 12px; }
+.page-head + .mastered-btn { margin: -4px 0 16px; }
 
 .progress {
   height: 6px;

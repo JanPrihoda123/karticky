@@ -150,31 +150,34 @@
     return 'text-sm';
   }
 
-  function faceHtml(card, side) {
+  // side: which content to show ('front' = question); position: which face of the flip card.
+  function faceHtml(card, side, position) {
     const label = side === 'front' ? 'Otázka' : 'Odpověď';
     const text = card[`${side}Text`];
     if (text) {
       return `
-        <div class="face face-${side}">
+        <div class="face face-${position}">
           <p class="face-text ${textSize(text)}">${esc(text)}</p>
           <span class="face-tag">${label}</span>
         </div>`;
     }
     const src = blobUrl(card[side]);
     return `
-      <div class="face face-${side}">
+      <div class="face face-${position}">
         <img src="${src}" alt="${label}">
         <span class="face-tag">${label}</span>
         <button class="zoom" data-src="${src}" aria-label="Zvětšit">${icon('zoom')}</button>
       </div>`;
   }
 
-  function flipCardHtml(card) {
+  // reversed: show the answer first and the question on the flip side.
+  function flipCardHtml(card, reversed = false) {
+    const [first, second] = reversed ? ['back', 'front'] : ['front', 'back'];
     return `
       <div class="flip" role="button" tabindex="0" aria-label="Otočit kartu">
         <div class="flip-inner">
-          ${faceHtml(card, 'front')}
-          ${faceHtml(card, 'back')}
+          ${faceHtml(card, first, 'front')}
+          ${faceHtml(card, second, 'back')}
         </div>
       </div>`;
   }
@@ -211,8 +214,9 @@
     return toggle;
   }
 
-  function decisionButtons(box) {
-    if (box === MASTERED_BOX) {
+  // Browsing a mastered card only offers the reset; the mastered review also lets you keep it.
+  function decisionButtons(box, canKeepMastered = false) {
+    if (box === MASTERED_BOX && !canKeepMastered) {
       return `<button class="btn btn-fail btn-lg btn-block" data-act="fail">${icon('x')}<span>Zapomněl/a jsem → Box 1</span></button>`;
     }
     return `
@@ -221,7 +225,7 @@
   }
 
   function outcomeHint(box) {
-    if (box === MASTERED_BOX) return 'Karta zůstane naučená, dokud ji nevrátíte.';
+    if (box === MASTERED_BOX) return 'Umím → zůstane mezi naučenými · Neumím → Box 1';
     const next = box + 1;
     const wait = BOX_INTERVAL_DAYS[next];
     const when = next === MASTERED_BOX ? 'mezi naučené'
@@ -379,11 +383,20 @@
         <a class="btn ${cards.length ? 'btn-ghost' : 'btn-primary btn-lg'}" href="#/add/${deckId}">${icon('camera')}<span>Přidat kartu</span></a>
       </section>
 
+      <div class="direction-row">
+        <span class="muted small">Nejdřív ukázat</span>
+        <div class="segmented" role="group" aria-label="Kterou stranu ukázat nejdřív">
+          <button type="button" data-reverse="0" aria-pressed="${!deck.reverse}">Otázku</button>
+          <button type="button" data-reverse="1" aria-pressed="${Boolean(deck.reverse)}">Odpověď</button>
+        </div>
+      </div>
+
       <div class="section-head">
         <h2>Boxy</h2>
         <span class="muted small">Celkem ${s.total}</span>
       </div>
       ${boxGridHtml(deckId, s.boxes)}
+      ${s.mastered ? `<a class="btn btn-ghost btn-block mastered-btn" href="#/deck/${deckId}/mastered">${icon('check')}<span>Opakovat naučené (${s.mastered})</span></a>` : ''}
 
       <section class="settings-section">
         <h2>Upravit sadu</h2>
@@ -393,6 +406,16 @@
         </form>
         <button class="btn btn-ghost btn-danger btn-sm" id="delete-deck">${icon('trash')}<span>Smazat sadu</span></button>
       </section>`;
+
+    app.querySelectorAll('[data-reverse]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const reverse = btn.dataset.reverse === '1';
+        if (reverse === Boolean(deck.reverse)) return;
+        await DB.putDeck({ ...deck, reverse });
+        toast(reverse ? 'Karty se budou ukazovat od odpovědi' : 'Karty se budou ukazovat od otázky');
+        renderDeck(deckId);
+      });
+    });
 
     document.getElementById('rename').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -674,10 +697,15 @@
     });
   }
 
-  async function renderReview(deckId) {
+  // Daily review of due cards, or (mastered = true) an on-demand pass over box 6.
+  async function renderReview(deckId, mastered = false) {
     const [decks, all] = await Promise.all([sortedDecks(), deckId ? DB.byDeck(deckId) : DB.all()]);
     const deckById = Object.fromEntries(decks.map((d) => [d.id, d]));
-    const queue = all.filter((c) => isDue(c)).sort(compareCards);
+    const queue = mastered
+      // Longest unchecked first.
+      ? all.filter((c) => c.box === MASTERED_BOX)
+        .sort((a, b) => (a.lastReviewedAt || '').localeCompare(b.lastReviewedAt || ''))
+      : all.filter((c) => isDue(c)).sort(compareCards);
     const exit = deckId ? `#/deck/${deckId}` : '#/';
     let done = 0;
     let passed = 0;
@@ -687,8 +715,8 @@
       app.innerHTML = `
         <section class="hero">
           <div class="hero-count">0</div>
-          <div class="hero-label">karet k opakování</div>
-          <p class="muted">Dnes už nic nečeká.</p>
+          <div class="hero-label">${mastered ? 'naučených karet' : 'karet k opakování'}</div>
+          <p class="muted">${mastered ? 'V této sadě zatím nejsou žádné naučené karty.' : 'Dnes už nic nečeká.'}</p>
           <a class="btn btn-primary" href="${exit}">Zpět</a>
         </section>`;
       return;
@@ -698,7 +726,7 @@
       keyHandler = null;
       app.innerHTML = `
         <section class="hero">
-          <div class="hero-label">Opakování dokončeno</div>
+          <div class="hero-label">${mastered ? 'Opakování naučených dokončeno' : 'Opakování dokončeno'}</div>
           <div class="summary">
             <div class="summary-item pass">${icon('check')}<strong>${passed}</strong><span>Umím</span></div>
             <div class="summary-item fail">${icon('x')}<strong>${failed}</strong><span>Neumím</span></div>
@@ -712,6 +740,7 @@
       if (!queue.length) return finish();
       const card = queue[0];
       const deck = deckById[card.deckId];
+      const reversed = Boolean(deck && deck.reverse);
       const pct = Math.round((done / (done + queue.length)) * 100);
 
       app.innerHTML = `
@@ -725,9 +754,9 @@
           <span class="muted small">Zbývá ${queue.length}</span>
         </div>
         ${!deckId && deck ? `<p class="review-deck" style="--c:${deckColor(deck)}"><span class="dot"></span>${esc(deck.name)}</p>` : ''}
-        ${flipCardHtml(card)}
+        ${flipCardHtml(card, reversed)}
         <div class="decision">
-          <p class="flip-hint muted">Klepnutím na kartu zobrazíte odpověď</p>
+          <p class="flip-hint muted">Klepnutím na kartu zobrazíte ${reversed ? 'otázku' : 'odpověď'}</p>
         </div>`;
 
       const decision = app.querySelector('.decision');
@@ -754,14 +783,15 @@
         queue.splice(idx, 1);
         done++;
         if (pass) passed++; else failed++;
-        // Failed cards are due again today, so they come back at the end.
-        if (isDue(updated)) queue.push(updated);
+        // Failed cards are due again today, so they come back at the end of a daily
+        // review. In the mastered review they wait for the next daily review instead.
+        if (!mastered && isDue(updated)) queue.push(updated);
         show();
       }
 
       const toggle = mountFlip(() => {
         decision.innerHTML = `
-          <div class="decision-buttons">${decisionButtons(card.box)}</div>
+          <div class="decision-buttons">${decisionButtons(card.box, true)}</div>
           <p class="muted small center">${outcomeHint(card.box)}</p>`;
         answer = bindDecision(decision, decide);
       });
@@ -770,7 +800,7 @@
         if (e.key === ' ') { e.preventDefault(); toggle(); return; }
         if (!answer) return;
         if (e.key === 'ArrowLeft' || e.key === '1') answer(false);
-        if ((e.key === 'ArrowRight' || e.key === '2') && card.box !== MASTERED_BOX) answer(true);
+        if (e.key === 'ArrowRight' || e.key === '2') answer(true);
       };
     }
 
@@ -796,10 +826,10 @@
     const cards = await boxCards(deckId, box);
     const title = box === MASTERED_BOX ? 'Naučené' : `Box ${box}`;
     const rule = box === MASTERED_BOX
-      ? 'Otevřete kartu a otočte ji. Pokud ji už neumíte, vraťte ji tlačítkem ✗ do Boxu 1.'
+      ? 'Naučené karty do denního opakování nechodí. Projděte je tlačítkem níže, kdykoli chcete; co už neumíte, vraťte tlačítkem ✗ do Boxu 1.'
       : box === 1
         ? 'Nové a zapomenuté karty. Opakují se hned, dokud je nezvládnete.'
-        : `Karty se opakují ${BOX_INTERVAL_DAYS[box]} ${plural(BOX_INTERVAL_DAYS[box], 'den', 'dny', 'dní')} po přesunu sem.`;
+        : `Karty se opakují ${BOX_INTERVAL_DAYS[box]} ${plural(BOX_INTERVAL_DAYS[box], 'den', 'dny', 'dní')} po přesunu sem. Když je ten den nezopakujete, spadnou zpět do Boxu 1.`;
 
     app.innerHTML = `
       <div class="page-head">
@@ -807,6 +837,9 @@
         <h1><span class="dot box-${box}"></span>${title} <span class="muted">(${cards.length})</span></h1>
         <p class="muted small">${rule}</p>
       </div>
+      ${box === MASTERED_BOX && cards.length
+        ? `<a class="btn btn-primary btn-block mastered-btn" href="#/deck/${deckId}/mastered">${icon('check')}<span>Opakovat naučené</span></a>`
+        : ''}
       ${cards.length ? `
         <div class="thumb-grid">
           ${cards.map((c) => `
@@ -939,16 +972,36 @@
     [/^#\/review$/, () => renderReview(null)],
     [new RegExp(`^#/deck/${ID}$`), (m) => renderDeck(m[1])],
     [new RegExp(`^#/deck/${ID}/review$`), (m) => renderReview(m[1])],
+    [new RegExp(`^#/deck/${ID}/mastered$`), (m) => renderReview(m[1], true)],
     [new RegExp(`^#/deck/${ID}/box/([1-6])$`), (m) => renderBox(m[1], Number(m[2]))],
     [new RegExp(`^#/add(?:/${ID})?$`), (m) => renderCardForm({ deckId: m[1] })],
     [new RegExp(`^#/card/${ID}$`), (m) => renderCard(m[1])],
     [new RegExp(`^#/card/${ID}/edit$`), (m) => renderEdit(m[1])],
   ];
 
+  // Once per day: cards from boxes 2–5 missed on their due day drop back to box 1.
+  let overdueCheckedOn = null;
+  async function applyOverdue() {
+    const today = dayKey();
+    if (overdueCheckedOn === today) return;
+    const dropped = (await DB.all()).map((c) => Leitner.settleOverdue(c)).filter(Boolean);
+    if (dropped.length) {
+      await DB.importAll([], dropped);
+      const n = dropped.length;
+      toast(`${n} ${cardsWord(n)} ${plural(n, 'spadla', 'spadly', 'spadlo')} zpět do Boxu 1, protože ${plural(n, 'nebyla zopakovaná', 'nebyly zopakované', 'nebylo zopakováno')} včas.`);
+    }
+    overdueCheckedOn = today;
+  }
+
   async function router() {
     releaseUrls();
     keyHandler = null;
     closeLightbox();
+    try {
+      await applyOverdue();
+    } catch (err) {
+      console.error(err);
+    }
     const hash = location.hash || '#/';
     // The header's "new card" button adds to the deck currently on screen.
     const deckMatch = hash.match(/^#\/(?:deck|add)\/([\w-]+)/);
